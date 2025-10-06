@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YouTube Sync Global (Final)</title>
+<title>YouTube Sync Global</title>
 <style>
-  body { background:#111; color:#fff; font-family:Arial; text-align:center; padding:20px; }
+  body { background:#111; color:#fff; font-family:Arial, sans-serif; text-align:center; padding:20px; }
   input,button { padding:8px; border:none; border-radius:6px; margin:5px; }
-  input { width:60%; }
-  button { background:#e50914; color:#fff; cursor:pointer; }
+  input { width:60%; max-width:500px; }
+  button { background:#e50914; color:#fff; cursor:pointer; transition:.2s; }
   button:hover { background:#ff4040; }
-  iframe { width:80%; height:450px; border-radius:12px; margin-top:15px; }
+  iframe { width:80%; max-width:800px; height:450px; border-radius:12px; margin-top:15px; border:none; }
   .controls { margin-top:10px; }
+  #status { margin-top:15px; font-size:.95rem; color:#ccc; }
 </style>
 </head>
 <body>
@@ -35,26 +36,26 @@
   <button id="syncBtn">🔁 Sinkronkan</button>
 </div>
 
-<p id="status">Menunggu koneksi Firebase...</p>
+<p id="status">⏳ Menunggu koneksi Firebase...</p>
 
-<!-- 🔥 Firebase compat SDK -->
+<!-- 🔥 Firebase compat SDK (pastikan gunakan versi compat agar tidak error "export") -->
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 
 <script>
-// 🔥 Konfigurasi Firebase kamu di sini
+/* ======================= 🔥 KONFIGURASI FIREBASE ======================= */
 const firebaseConfig = {
   apiKey: "AIzaSyCLxcs6175tCztYpCGK4RSQu6OWYtXzFig",
-    authDomain: "yt-sync-24cc1.firebaseapp.com",
-    databaseURL: "https://yt-sync-24cc1-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "yt-sync-24cc1",
-    storageBucket: "yt-sync-24cc1.firebasestorage.app",
-    messagingSenderId: "595148556839",
-    appId: "1:595148556839:web:2d470c580b49b98e389c02",
-    measurementId: "G-X9FPENGD5R"
+  authDomain: "yt-sync-24cc1.firebaseapp.com",
+  databaseURL: "https://yt-sync-24cc1-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "yt-sync-24cc1",
+  storageBucket: "yt-sync-24cc1.appspot.com", // 🔧 perbaikan: .app diganti ke .appspot.com (format resmi)
+  messagingSenderId: "595148556839",
+  appId: "1:595148556839:web:2d470c580b49b98e389c02",
+  measurementId: "G-X9FPENGD5R"
 };
 
-// 🔌 Inisialisasi Firebase
+/* ======================= 🔌 INISIALISASI FIREBASE ======================= */
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const syncRef = db.ref("ytSync");
@@ -62,53 +63,59 @@ const syncRef = db.ref("ytSync");
 let player;
 let currentVideoId = null;
 let isLeader = false;
+let ytApiReady = false;
 
-// 🔹 Tambahkan script YouTube API
-let tag = document.createElement('script');
-tag.src = "https://www.youtube.com/iframe_api";
-document.body.appendChild(tag);
+/* ======================= 🎬 LOAD YOUTUBE API ======================= */
+(function loadYouTubeAPI() {
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.body.appendChild(tag);
+})();
 
+/* ======================= 🔍 UTIL: AMBIL ID VIDEO ======================= */
 function extractVideoID(url) {
   const match = url.match(/(?:v=|\.be\/)([^&#]+)/);
   return match ? match[1] : null;
 }
 
-// 🔹 Dipanggil otomatis ketika API siap
+/* ======================= ✅ CALLBACK: API SIAP ======================= */
 function onYouTubeIframeAPIReady() {
-  console.log("YouTube API siap digunakan ✅");
-  document.getElementById("status").innerText = "Koneksi Firebase berhasil. Siap memuat video.";
+  ytApiReady = true;
+  console.log("✅ YouTube API siap digunakan");
+  document.getElementById("status").innerText = "✅ Firebase & YouTube API siap digunakan.";
 }
 
-// 🔹 Muat video dari input
+/* ======================= 🚀 MUAT VIDEO ======================= */
 function loadVideo() {
   const url = document.getElementById('videoUrl').value.trim();
   const id = extractVideoID(url);
-  if (!id) {
-    alert("URL tidak valid! Pastikan formatnya seperti: https://www.youtube.com/watch?v=xxxx");
-    return;
-  }
+  if (!id) return alert("URL tidak valid! Gunakan format: https://www.youtube.com/watch?v=xxxx");
+
+  if (!ytApiReady) return alert("API YouTube belum siap, tunggu beberapa detik...");
 
   currentVideoId = id;
-  if (player) player.destroy();
+  isLeader = true;
+
+  // Jika sudah ada player sebelumnya, hancurkan dulu
+  if (player && player.destroy) player.destroy();
 
   player = new YT.Player('player', {
     videoId: id,
-    playerVars: { 'controls': 1 },
+    playerVars: { 'controls': 1, 'rel': 0 },
     events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
   });
 
-  isLeader = true;
-  syncRef.update({ videoId: id });
+  syncRef.update({ videoId: id, action: 'pause', time: 0 });
 }
 
-// 🔹 Ketika video siap
+/* ======================= 🟢 SAAT VIDEO SIAP ======================= */
 function onPlayerReady() {
-  document.getElementById('status').innerText = "Video siap diputar.";
+  document.getElementById('status').innerText = "🎬 Video siap diputar.";
 }
 
-// 🔹 Ketika ada perubahan status video
+/* ======================= 🎞 SAAT STATUS BERUBAH ======================= */
 function onPlayerStateChange(e) {
-  if (!isLeader) return;
+  if (!isLeader || !player) return;
   const time = player.getCurrentTime();
   if (e.data === YT.PlayerState.PLAYING) {
     syncRef.update({ action: 'play', time });
@@ -117,7 +124,7 @@ function onPlayerStateChange(e) {
   }
 }
 
-// 🔹 Tombol kontrol
+/* ======================= 🧭 KONTROL PLAYER ======================= */
 function playVideo() {
   if (player && isLeader) {
     player.playVideo();
@@ -136,43 +143,56 @@ function syncNow() {
   }
 }
 
-// 🔹 Listener global dari Firebase
+/* ======================= 🌍 LISTENER FIREBASE (REALTIME SYNC) ======================= */
 syncRef.on('value', snap => {
   const data = snap.val();
   if (!data) return;
 
-  // Muat video jika beda
+  // Jika videoId baru muncul → buat player baru
   if (data.videoId && (!player || data.videoId !== currentVideoId)) {
     currentVideoId = data.videoId;
     player = new YT.Player('player', {
       videoId: data.videoId,
-      playerVars: { 'controls': 1 },
+      playerVars: { 'controls': 1, 'rel': 0 },
       events: { 'onReady': onPlayerReady }
     });
   }
 
+  // Jangan eksekusi sinkronisasi kalau kita adalah leader
   if (!player || isLeader) return;
 
+  // Sinkronisasi aksi global
   if (data.action === 'play') {
-    player.seekTo(data.time, true);
+    player.seekTo(data.time || 0, true);
     player.playVideo();
   } else if (data.action === 'pause') {
-    player.seekTo(data.time, true);
+    player.seekTo(data.time || 0, true);
     player.pauseVideo();
   } else if (data.action === 'sync') {
-    player.seekTo(data.time, true);
+    player.seekTo(data.time || 0, true);
   }
 
   document.getElementById('status').innerText =
-    "Disinkronkan ke waktu: " + (data.time || 0).toFixed(2) + " detik";
+    `🔁 Disinkronkan ke waktu: ${parseFloat(data.time || 0).toFixed(2)} detik`;
 });
 
-// 🔹 Pasang event listener tombol
+/* ======================= ⚙️ PASANG EVENT LISTENER ======================= */
 document.getElementById('loadBtn').addEventListener('click', loadVideo);
 document.getElementById('playBtn').addEventListener('click', playVideo);
 document.getElementById('pauseBtn').addEventListener('click', pauseVideo);
 document.getElementById('syncBtn').addEventListener('click', syncNow);
+
+// Optional: cegah error tombol diklik sebelum API siap
+['loadBtn', 'playBtn', 'pauseBtn', 'syncBtn'].forEach(id => {
+  document.getElementById(id).disabled = true;
+});
+setTimeout(() => {
+  ['loadBtn', 'playBtn', 'pauseBtn', 'syncBtn'].forEach(id => {
+    document.getElementById(id).disabled = false;
+  });
+  document.getElementById('status').innerText = "✅ Aplikasi siap digunakan!";
+}, 2000);
 </script>
+
 </body>
 </html>
-
