@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Sync Global</title>
+<style>
+  body { background:#111; color:#fff; font-family:Arial; text-align:center; padding:20px; }
+  input,button { padding:8px; border:none; border-radius:6px; margin:5px; }
+  input { width:60%; }
+  button { background:#e50914; color:#fff; cursor:pointer; }
+  button:hover { background:#ff4040; }
+  iframe { width:80%; height:450px; border-radius:12px; margin-top:15px; }
+</style>
+</head>
+<body>
+
+<h2>🎥 YouTube Watch Together</h2>
+<p>Tonton YouTube secara sinkron antar semua pengguna.</p>
+
+<div>
+  <input type="text" id="videoUrl" placeholder="Tempel URL YouTube">
+  <button onclick="loadVideo()">Muat Video</button>
+</div>
+
+<div id="player"></div>
+
+<div>
+  <button onclick="playVideo()">▶️ Putar</button>
+  <button onclick="pauseVideo()">⏸️ Jeda</button>
+  <button onclick="syncNow()">🔁 Sinkronkan</button>
+</div>
+
+<p id="status">Menunggu koneksi Firebase...</p>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
+
+<script>
+/* ---------------------------- 🔥 CONFIG FIREBASE ---------------------------- */
+  const firebaseConfig = {
+    apiKey: "AIzaSyCLxcs6175tCztYpCGK4RSQu6OWYtXzFig",
+    authDomain: "yt-sync-24cc1.firebaseapp.com",
+    projectId: "yt-sync-24cc1",
+    storageBucket: "yt-sync-24cc1.firebasestorage.app",
+    messagingSenderId: "595148556839",
+    appId: "1:595148556839:web:2d470c580b49b98e389c02",
+    measurementId: "G-X9FPENGD5R"
+  };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const syncRef = db.ref("ytSync");
+
+/* -------------------------- 🧠 LOGIKA YOUTUBE PLAYER -------------------------- */
+let player, currentVideoId = null, isLeader = false;
+
+// Load YouTube IFrame API
+let tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+document.body.appendChild(tag);
+
+function extractVideoID(url) {
+  const match = url.match(/(?:v=|\.be\/)([^&#]+)/);
+  return match ? match[1] : null;
+}
+
+function loadVideo() {
+  const url = document.getElementById('videoUrl').value.trim();
+  const id = extractVideoID(url);
+  if (!id) return alert("URL YouTube tidak valid!");
+  currentVideoId = id;
+  if (player) player.destroy();
+  player = new YT.Player('player', {
+    videoId: id,
+    playerVars: { 'controls': 1 },
+    events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+  });
+  isLeader = true;
+  syncRef.update({ videoId: id });
+}
+
+function onYouTubeIframeAPIReady() {
+  console.log("YouTube API siap");
+}
+
+function onPlayerReady() {
+  document.getElementById('status').innerText = "Video siap dimainkan.";
+}
+
+function onPlayerStateChange(e) {
+  if (!isLeader) return;
+  const time = player.getCurrentTime();
+  if (e.data === YT.PlayerState.PLAYING) {
+    syncRef.update({ action: 'play', time });
+  } else if (e.data === YT.PlayerState.PAUSED) {
+    syncRef.update({ action: 'pause', time });
+  }
+}
+
+function playVideo() {
+  if (player && isLeader) {
+    player.playVideo();
+    syncRef.update({ action: 'play', time: player.getCurrentTime() });
+  }
+}
+
+function pauseVideo() {
+  if (player && isLeader) {
+    player.pauseVideo();
+    syncRef.update({ action: 'pause', time: player.getCurrentTime() });
+  }
+}
+
+function syncNow() {
+  if (player && isLeader) {
+    syncRef.update({ action: 'sync', time: player.getCurrentTime() });
+  }
+}
+
+/* ------------------------ 📡 LISTENER DARI FIREBASE ------------------------ */
+syncRef.on('value', snap => {
+  const data = snap.val();
+  if (!data) return;
+
+  if (data.videoId && (!player || data.videoId !== currentVideoId)) {
+    currentVideoId = data.videoId;
+    player = new YT.Player('player', {
+      videoId: data.videoId,
+      playerVars: { 'controls': 1 },
+      events: { 'onReady': onPlayerReady }
+    });
+  }
+
+  if (!player || isLeader) return;
+
+  if (data.action === 'play') {
+    player.seekTo(data.time, true);
+    player.playVideo();
+  } else if (data.action === 'pause') {
+    player.seekTo(data.time, true);
+    player.pauseVideo();
+  } else if (data.action === 'sync') {
+    player.seekTo(data.time, true);
+  }
+
+  document.getElementById('status').innerText =
+    "Disinkronkan ke waktu: " + data.time.toFixed(2) + " detik";
+});
+</script>
+</body>
+</html>
